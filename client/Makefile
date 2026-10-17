@@ -10,7 +10,7 @@ CTRULIB := $(DEVKITPRO)/libctru
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -g -Wall -O2 -mword-relocations -ffunction-sections $(ARCH) -D__3DS__ -I$(CTRULIB)/include
 LDFLAGS := -specs=3dsx.specs -g $(ARCH) -L$(CTRULIB)/lib
-LIBS    := -lctru -lm
+LIBS    := -lcitro2d -lcitro3d -lctru -lm
 
 all: $(TARGET).3dsx
 
