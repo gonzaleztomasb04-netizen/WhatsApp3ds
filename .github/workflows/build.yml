@@ -13,4 +13,222 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: whatsapp3ds
-          path: client/*.3dsx
+          path: |
+            client/*.3dsx
+            client/*.elf
+
+  cia:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: whatsapp3ds
+          path: out
+      - name: Herramientas
+        run: |
+          curl -L https://github.com/Steveice10/bannertool/releases/download/1.2.0/bannertool.zip -o bannertool.zip
+          unzip -o bannertool.zip -d bt
+          curl -L https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip -o makerom.zip
+          unzip -o makerom.zip -d mr
+          chmod +x bt/linux-x86_64/bannertool mr/makerom
+      - name: Recursos
+        run: |
+          python3 - <<'PY'
+          import zlib, struct, wave
+          def png(path, w, h, rgb):
+              raw = b''.join(b'\x00' + bytes(rgb) * w for _ in range(h))
+              def chunk(t, d):
+                  c = struct.pack('>I', len(d)) + t + d
+                  return c + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+              data = b'\x89PNG\r\n\x1a\n'
+              data += chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+              data += chunk(b'IDAT', zlib.compress(raw))
+              data += chunk(b'IEND', b'')
+              open(path, 'wb').write(data)
+          png('banner.png', 256, 128, (37, 211, 102))
+          png('icon.png', 48, 48, (37, 211, 102))
+          a = wave.open('audio.wav', 'wb')
+          a.setnchannels(1)
+          a.setsampwidth(2)
+          a.setframerate(22050)
+          a.writeframes(b'\x00\x00' * 22050)
+          a.close()
+          PY
+      - name: Configuracion
+        run: |
+          cat > app.rsf <<'EOF'
+          BasicInfo:
+            Title                   : "WhatsApp3DS"
+            CompanyCode             : "00"
+            ProductCode             : "CTR-P-WA3D"
+            ContentType             : Application
+            Logo                    : Nintendo
+
+          TitleInfo:
+            UniqueId                : 0xd5a3e
+            Category                : Application
+
+          Option:
+            UseOnSD                 : true
+            FreeProductCode         : true
+            MediaFootPadding        : false
+            EnableCrypt             : false
+            EnableCompress          : true
+
+          AccessControlInfo:
+            FileSystemAccess:
+              - DirectSdmc
+            IdealProcessor          : 0
+            AffinityMask            : 1
+            Priority                : 16
+            MaxCpu                  : 0x9E
+            DisableDebug            : true
+            EnableForceDebug        : false
+            CanWriteSharedPage      : true
+            CanUsePrivilegedPriority : false
+            CanUseNonAlphabetAndNumber : true
+            PermitMainFunctionArgument : true
+            CanShareDeviceMemory    : true
+            RunnableOnSleep         : false
+            SpecialMemoryArrange    : true
+            CoreVersion             : 2
+            DescVersion             : 2
+            ReleaseKernelMajor      : "02"
+            ReleaseKernelMinor      : "33"
+            MemoryType              : Application
+            HandleTableSize         : 512
+            SystemMode              : 64MB
+            SystemModeExt           : Legacy
+            IORegisterMapping:
+              - 1ff50000-1ff57fff
+              - 1ff70000-1ff77fff
+            MemoryMapping:
+              - 1f000000-1f5fffff:r
+            SystemCallAccess:
+              ControlMemory: 1
+              QueryMemory: 2
+              ExitProcess: 3
+              GetProcessIdealProcessor: 6
+              CreateThread: 8
+              ExitThread: 9
+              SleepThread: 10
+              GetThreadPriority: 11
+              SetThreadPriority: 12
+              GetThreadIdealProcessor: 15
+              GetCurrentProcessorNumber: 17
+              CreateMutex: 19
+              ReleaseMutex: 20
+              CreateSemaphore: 21
+              ReleaseSemaphore: 22
+              CreateEvent: 23
+              SignalEvent: 24
+              ClearEvent: 25
+              CreateTimer: 26
+              SetTimer: 27
+              CancelTimer: 28
+              ClearTimer: 29
+              CreateMemoryBlock: 30
+              MapMemoryBlock: 31
+              UnmapMemoryBlock: 32
+              CreateAddressArbiter: 33
+              ArbitrateAddress: 34
+              CloseHandle: 35
+              WaitSynchronization1: 36
+              WaitSynchronizationN: 37
+              DuplicateHandle: 39
+              GetSystemTick: 40
+              GetHandleInfo: 41
+              GetSystemInfo: 42
+              GetProcessInfo: 43
+              GetThreadInfo: 44
+              ConnectToPort: 45
+              SendSyncRequest1: 46
+              SendSyncRequest2: 47
+              SendSyncRequest3: 48
+              SendSyncRequest4: 49
+              SendSyncRequest: 50
+              GetProcessId: 53
+              GetProcessIdOfThread: 54
+              GetThreadId: 55
+              GetResourceLimit: 56
+              GetResourceLimitLimitValues: 57
+              GetResourceLimitCurrentValues: 58
+              GetThreadContext: 59
+              Break: 60
+              OutputDebugString: 61
+            InterruptNumbers:
+            ServiceAccessControl:
+              - APT:U
+              - ac:u
+              - boss:U
+              - cam:u
+              - cecd:u
+              - cfg:u
+              - dsp::DSP
+              - frd:u
+              - fs:USER
+              - gsp::Gpu
+              - hid:USER
+              - http:C
+              - mic:u
+              - ndm:u
+              - news:u
+              - nwm::UDS
+              - ptm:u
+              - pxi:dev
+              - soc:U
+              - ssl:C
+              - y2r:u
+              - ldr:ro
+              - ir:USER
+              - ir:u
+              - csnd:SND
+              - am:u
+
+          SystemControlInfo:
+            SaveDataSize: 0KB
+            RemasterVersion: 2
+            StackSize: 0x40000
+            Dependency:
+              ac: 0x0004013000002402L
+              act: 0x0004013000003802L
+              am: 0x0004013000001502L
+              boss: 0x0004013000003402L
+              camera: 0x0004013000001602L
+              cecd: 0x0004013000002602L
+              cfg: 0x0004013000001702L
+              codec: 0x0004013000001802L
+              csnd: 0x0004013000002702L
+              dlp: 0x0004013000002802L
+              dsp: 0x0004013000001a02L
+              friends: 0x0004013000003202L
+              gpio: 0x0004013000001b02L
+              gsp: 0x0004013000001c02L
+              hid: 0x0004013000001d02L
+              http: 0x0004013000002902L
+              i2c: 0x0004013000001e02L
+              ir: 0x0004013000003302L
+              mcu: 0x0004013000001f02L
+              mic: 0x0004013000002002L
+              ndm: 0x0004013000002b02L
+              news: 0x0004013000003502L
+              nim: 0x0004013000002c02L
+              nwm: 0x0004013000002d02L
+              pdn: 0x0004013000002102L
+              ps: 0x0004013000003102L
+              ptm: 0x0004013000002202L
+              ro: 0x0004013000003702L
+              socket: 0x0004013000002e02L
+              spi: 0x0004013000002302L
+              ssl: 0x0004013000002f02L
+          EOF
+      - name: Crear CIA
+        run: |
+          bt/linux-x86_64/bannertool makebanner -i banner.png -a audio.wav -o banner.bnr
+          bt/linux-x86_64/bannertool makesmdh -s "WhatsApp 3DS" -l "Cliente de WhatsApp para 3DS" -p "Autor" -i icon.png -o icon.icn
+          mr/makerom -f cia -o whatsapp3ds.cia -target t -exefslogo -elf out/whatsapp3ds.elf -rsf app.rsf -icon icon.icn -banner banner.bnr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whatsapp3ds-cia
+          path: whatsapp3ds.cia
