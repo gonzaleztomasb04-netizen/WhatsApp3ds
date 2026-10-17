@@ -1,9 +1,9 @@
-.RECIPEPREFIX := >
 
 ifeq ($(strip $(DEVKITARM)),)
 $(error Define DEVKITARM)
 endif
 include $(DEVKITARM)/3ds_rules
+.RECIPEPREFIX := >
 
 TARGET  := whatsapp3ds
 CTRULIB := $(DEVKITPRO)/libctru
