@@ -27,7 +27,7 @@ jobs:
           path: out
       - name: Herramientas
         run: |
-          curl -L https://github.com/Steveice10/bannertool/releases/download/1.2.0/bannertool.zip -o bannertool.zip
+          curl -L https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip -o bannertool.zip
           unzip -o bannertool.zip -d bt
           curl -L https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip -o makerom.zip
           unzip -o makerom.zip -d mr
