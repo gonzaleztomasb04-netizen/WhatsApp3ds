@@ -186,3 +186,13 @@ app.post('/send', async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Puente en puerto ${PORT}`));
+// ---- Descubrimiento automatico para la 3DS (UDP) ----
+const dgram = require('dgram');
+const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+udp.on('message', (msg, rinfo) => {
+  if (String(msg).trim() === 'WA3DS?') {
+    udp.send(Buffer.from(`WA3DS:${PORT}`), rinfo.port, rinfo.address);
+  }
+});
+udp.on('error', (e) => console.log('UDP:', e.message));
+udp.bind(8081, '0.0.0.0');
