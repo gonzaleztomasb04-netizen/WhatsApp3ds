@@ -1,4 +1,5 @@
 // Cliente WhatsApp para 3DS (devkitARM + libctru + citro2d)
+// Encuentra el puente solo (broadcast UDP), no hace falta escribir la IP.
 // Controles (o toca los botones de la pantalla de abajo):
 //  Lista:  Arriba/Abajo mover, A abrir, Y actualizar, START salir
 //  Chat:   X escribir mensaje, Y actualizar, B volver (se actualiza solo cada ~5 s)
@@ -7,12 +8,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 // ---- CONFIGURA ESTO ----
-#define BRIDGE "http://192.168.100.9:8080"
-#define TOKEN  "tomol573"
+#define TOKEN "tomol573"
 // ------------------------
 
+#define DISCOVERY_PORT 8081
 #define BUFSZ 32768
 #define MAXCH 30
 #define MAXMSG 14
@@ -75,6 +83,7 @@ static Msg msgs[MAXMSG];
 static int nmsgs = 0;
 static char buf[BUFSZ];
 static char status[64] = "";
+static char bridge_url[64] = "";
 static int view = 0; // 0 = lista, 1 = chat
 static int sel = 0;
 
@@ -83,11 +92,50 @@ static C2D_TextBuf tbuf;
 
 // ---------------- Red ----------------
 
-// Devuelve bytes recibidos (>=0) o negativo si falla (-codigo HTTP o -1).
+// Busca el puente en la red local con un aviso UDP a toda la red.
+static int discover(void)
+{
+    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s < 0) return 0;
+
+    int yes = 1;
+    setsockopt(s, SOL_SOCKET, SO_BROADCAST, &yes, sizeof yes);
+    fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
+
+    struct sockaddr_in dst;
+    memset(&dst, 0, sizeof dst);
+    dst.sin_family = AF_INET;
+    dst.sin_port = htons(DISCOVERY_PORT);
+    dst.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+
+    for (int tries = 0; tries < 3; tries++) {
+        sendto(s, "WA3DS?", 6, 0, (struct sockaddr *)&dst, sizeof dst);
+        for (int w = 0; w < 30; w++) {
+            char reply[32];
+            struct sockaddr_in from;
+            socklen_t fl = sizeof from;
+            int n = recvfrom(s, reply, sizeof reply - 1, 0, (struct sockaddr *)&from, &fl);
+            if (n >= 7 && memcmp(reply, "WA3DS:", 6) == 0) {
+                reply[n] = 0;
+                snprintf(bridge_url, sizeof bridge_url, "http://%s:%d",
+                         inet_ntoa(from.sin_addr), atoi(reply + 6));
+                close(s);
+                return 1;
+            }
+            svcSleepThread(16666666LL);
+        }
+    }
+    close(s);
+    return 0;
+}
+
+// Devuelve bytes recibidos (>=0), -2 si no hay puente, u otro negativo si falla (-codigo HTTP o -1).
 static int http(int post, const char *path, const char *body)
 {
-    char url[320];
-    snprintf(url, sizeof url, "%s%s", BRIDGE, path);
+    if (!discover()) return -2;
+
+    char url[360];
+    snprintf(url, sizeof url, "%s%s", bridge_url, path);
 
     httpcContext c;
     if (R_FAILED(httpcOpenContext(&c, post ? HTTPC_METHOD_POST : HTTPC_METHOD_GET, url, 1)))
@@ -120,12 +168,18 @@ static int http(int post, const char *path, const char *body)
     return st == 200 ? (int)total : -(int)st;
 }
 
+static void set_error(const char *what, int n)
+{
+    if (n == -2) snprintf(status, sizeof status, "Puente no encontrado en esta red");
+    else snprintf(status, sizeof status, "%s (%d)", what, n);
+}
+
 static void load_chats(void)
 {
     nchats = 0;
     int n = http(0, "/chats", NULL);
     if (n < 0) {
-        snprintf(status, sizeof status, "Sin conexion con el puente (%d)", n);
+        set_error("Error del puente", n);
         return;
     }
     status[0] = 0;
@@ -151,7 +205,7 @@ static void load_msgs(void)
     snprintf(path, sizeof path, "/messages?chat=%s&limit=12", chats[sel].id);
     int n = http(0, path, NULL);
     if (n < 0) {
-        snprintf(status, sizeof status, "Error al cargar mensajes (%d)", n);
+        set_error("Error al cargar mensajes", n);
         return;
     }
     status[0] = 0;
@@ -376,7 +430,8 @@ static void send_message(void)
     static char body[360];
     snprintf(body, sizeof body, "%s\n%s", chats[sel].id, text);
     int n = http(1, "/send", body);
-    snprintf(status, sizeof status, n >= 0 ? "Enviado" : "Error al enviar (%d)", n);
+    if (n >= 0) snprintf(status, sizeof status, "Enviado");
+    else set_error("Error al enviar", n);
 }
 
 static int hit_test(const Button *b, int px, int py)
@@ -399,8 +454,11 @@ int main(void)
     tbuf = C2D_TextBufNew(8192);
     httpcInit(0);
 
+    u32 *soc_buf = (u32 *)memalign(0x1000, 0x20000);
+    if (soc_buf) socInit(soc_buf, 0x20000);
+
     int frames = 0;
-    show_loading("Cargando chats...");
+    show_loading("Buscando el puente...");
     load_chats();
 
     while (aptMainLoop()) {
@@ -463,6 +521,8 @@ int main(void)
         render();
     }
 
+    socExit();
+    free(soc_buf);
     httpcExit();
     C2D_TextBufDelete(tbuf);
     C2D_Fini();
