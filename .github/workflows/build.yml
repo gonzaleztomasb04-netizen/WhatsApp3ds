@@ -34,25 +34,60 @@ jobs:
           chmod +x bt/linux-x86_64/bannertool mr/makerom
       - name: Recursos
         run: |
+          sudo apt-get install -y python3-pil || pip install --break-system-packages pillow
           python3 - <<'PY'
-          import zlib, struct, wave
-          def png(path, w, h, rgb):
-              raw = b''.join(b'\x00' + bytes(rgb) * w for _ in range(h))
-              def chunk(t, d):
-                  c = struct.pack('>I', len(d)) + t + d
-                  return c + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
-              data = b'\x89PNG\r\n\x1a\n'
-              data += chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
-              data += chunk(b'IDAT', zlib.compress(raw))
-              data += chunk(b'IEND', b'')
-              open(path, 'wb').write(data)
-          png('banner.png', 256, 128, (37, 211, 102))
-          png('icon.png', 48, 48, (37, 211, 102))
-          a = wave.open('audio.wav', 'wb')
+          import wave
+          from PIL import Image, ImageDraw, ImageFont
+
+          BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+          def font(size):
+              try:
+                  return ImageFont.truetype(BOLD, size)
+              except Exception:
+                  return ImageFont.load_default()
+
+          def gradient(w, h, c1, c2):
+              img = Image.new("RGB", (w, h))
+              d = ImageDraw.Draw(img)
+              for y in range(h):
+                  t = y / (h - 1)
+                  c = tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+                  d.line([(0, y), (w, y)], fill=c)
+              return img
+
+          def bubble(d, cx, cy, r, fill):
+              d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill)
+              d.polygon([(cx - 0.9 * r, cy + 0.2 * r),
+                         (cx - 1.15 * r, cy + 1.1 * r),
+                         (cx - 0.2 * r, cy + 0.85 * r)], fill=fill)
+
+          # Banner 256x128 (se dibuja 4 veces mas grande y se reduce)
+          S = 4
+          img = gradient(256 * S, 128 * S, (7, 94, 84), (37, 211, 102))
+          d = ImageDraw.Draw(img)
+          bubble(d, 250, 235, 140, (255, 255, 255))
+          d.text((250, 235), "3DS", font=font(100), fill=(7, 94, 84), anchor="mm")
+          d.text((440, 215), "WhatsApp", font=font(88), fill=(255, 255, 255), anchor="lm")
+          d.text((440, 310), "para Nintendo 3DS", font=font(46), fill=(220, 248, 198), anchor="lm")
+          img.resize((256, 128), Image.LANCZOS).save("banner.png")
+
+          # Icono 48x48
+          S = 8
+          n = 48 * S
+          img = gradient(n, n, (7, 94, 84), (37, 211, 102))
+          d = ImageDraw.Draw(img)
+          bubble(d, 192, 176, 110, (255, 255, 255))
+          for x in (140, 192, 244):
+              d.ellipse([x - 20, 156, x + 20, 196], fill=(7, 94, 84))
+          img.resize((48, 48), Image.LANCZOS).save("icon.png")
+
+          # Audio silencioso de 1 segundo
+          a = wave.open("audio.wav", "wb")
           a.setnchannels(1)
           a.setsampwidth(2)
           a.setframerate(22050)
-          a.writeframes(b'\x00\x00' * 22050)
+          a.writeframes(b"\x00\x00" * 22050)
           a.close()
           PY
       - name: Configuracion
