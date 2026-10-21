@@ -36,6 +36,35 @@ const clean = (s) =>
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/[^\x20-\x7e]/g, '?');
 
+  const unwrap = (x) => {
+  while (x) {
+    const inner =
+      (x.ephemeralMessage && x.ephemeralMessage.message) ||
+      (x.viewOnceMessage && x.viewOnceMessage.message) ||
+      (x.viewOnceMessageV2 && x.viewOnceMessageV2.message) ||
+      (x.documentWithCaptionMessage && x.documentWithCaptionMessage.message);
+    if (!inner) break;
+    x = inner;
+  }
+  return x;
+};
+
+const labelOf = (m) => {
+  const x = unwrap(m.message);
+  if (!x) return '';
+  if (x.conversation) return x.conversation;
+  if (x.extendedTextMessage) return x.extendedTextMessage.text || '';
+  const cap = (label, o) => (o && o.caption ? `${label} ${o.caption}` : label);
+  if (x.imageMessage) return cap('[foto]', x.imageMessage);
+  if (x.videoMessage) return cap('[video]', x.videoMessage);
+  if (x.audioMessage) return '[audio]';
+  if (x.stickerMessage) return '[sticker]';
+  if (x.documentMessage) return '[documento]';
+  if (x.contactMessage) return '[contacto]';
+  if (x.locationMessage || x.liveLocationMessage) return '[ubicacion]';
+  if (x.reactionMessage) return '[reaccion]';
+  return '[media]';
+};
 const textOf = (m) => {
   const x = m.message;
   if (!x) return '';
@@ -55,7 +84,7 @@ function addMsg(m) {
   const list = (store.msgs[jid] = store.msgs[jid] || []);
   if (m.key.id && list.some((x) => x.id === m.key.id)) return;
   const ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
-  list.push({ id: m.key.id, me: m.key.fromMe ? 1 : 0, text: textOf(m), ts });
+  list.push({ id: m.key.id, me: m.key.fromMe ? 1 : 0, text: labelOf(m), ts });
   if (list.length > 50) list.shift();
   const c = chatOf(jid);
   c.ts = Math.max(c.ts, ts);
